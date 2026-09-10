@@ -1,12 +1,19 @@
 import os
 from flask import Flask, request, jsonify
-# Import your Delta Exchange client libraries here (e.g., ccxt or delta_rest_client)
+from delta_rest_client import DeltaRestClient, OrderType
 
 app = Flask(__name__)
 
-# Initialize your Delta Exchange API credentials from Render environment variables
+# Initialize Delta Exchange Client using Render environment variables
 API_KEY = os.getenv("DELTA_API_KEY")
 API_SECRET = os.getenv("DELTA_API_SECRET")
+
+# Use production base URL (or testnet if testing)
+delta_client = DeltaRestClient(
+    base_url='https://api.india.delta.exchange', 
+    api_key=API_KEY, 
+    api_secret=API_SECRET
+)
 
 @app.route('/', methods=['GET'])
 def health_check():
@@ -15,33 +22,37 @@ def health_check():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # force=True bypasses missing/unsupported content-type headers from TradingView
+        # force=True handles TradingView payloads without headers
         data = request.get_json(force=True)
         
         if not data:
             return jsonify({"status": "error", "message": "No JSON data received"}), 400
 
-        # Extract payload fields safely
-        symbol = data.get("symbol", "BTCUSD")
+        # Extract payload fields
+        product_id = int(data.get("product_id", 27))  # Default product ID (e.g., BTCUSD product ID on Delta)
         raw_size = data.get("size", 1)
         side = data.get("side", "buy").lower()
-        order_type = data.get("order_type", "market")
 
-        # Robust data cleaning for dynamic TradingView placeholders
+        # Clean size value
         try:
             size = int(float(str(raw_size).replace('"', '').replace("'", "")))
         except (ValueError, TypeError):
-            size = 1  # Fallback default size if parsing fails
+            size = 1
 
-        print(f"Executing Order -> Symbol: {symbol}, Side: {side}, Size: {size}, Type: {order_type}")
+        print(f"Placing Order on Delta -> Product ID: {product_id}, Side: {side}, Size: {size}")
 
-        # --- INSERT YOUR DELTA EXCHANGE API ORDER EXECUTION LOGIC HERE ---
-        # Example:
-        # response = delta_client.create_order(symbol=symbol, size=size, side=side, order_type=order_type)
+        # Execute real market order on Delta Exchange
+        order_response = delta_client.place_order(
+            product_id=product_id,
+            size=size,
+            side=side,
+            order_type=OrderType.MARKET
+        )
         
         return jsonify({
             "status": "success", 
-            "message": f"Successfully executed {side} order for {size} contracts of {symbol}"
+            "delta_response": order_response,
+            "message": "Order executed successfully on Delta Exchange"
         }), 200
 
     except Exception as e:
