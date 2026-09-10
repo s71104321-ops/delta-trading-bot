@@ -5,8 +5,8 @@ from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 app = Flask(__name__)
 
 # Initialize your Delta Exchange client using environment variables
-API_KEY = os.getenv('API_KEY', 'your_api_key_here')
-API_SECRET = os.getenv('API_SECRET', 'your_api_secret_here')
+API_KEY = os.getenv('API_KEY', '')
+API_SECRET = os.getenv('API_SECRET', '')
 BASE_URL = os.getenv('BASE_URL', 'https://api.india.delta.exchange')
 
 delta_client = DeltaRestClient(
@@ -27,7 +27,7 @@ def webhook():
         contract = strategy.get('contract', 'BTCUSD')
         raw_size = strategy.get('size', 1)
 
-        # CRITICAL FIX: Force order size to always be a positive integer to avoid negative_order_size error
+        # Force order size to always be a positive integer
         try:
             order_size = abs(int(raw_size))
         except (ValueError, TypeError):
@@ -36,28 +36,26 @@ def webhook():
         # Map action to side format expected by Delta Exchange ('buy' or 'sell')
         side = 'buy' if action == 'buy' else 'sell'
 
-        # Optional: Fetch product ID dynamically or use your hardcoded product ID integer for BTCUSD
-        # product_id = ... 
+        # BTCUSD product ID on Delta Exchange India is typically 27
+        product_id = 27 
 
-        print(f"Received Webhook -> Action: {side}, Contract: {contract}, Size: {order_size}")
+        print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {order_size}")
 
-        # Example order placement call (uncomment and adjust product_id as per your setup):
-        # order_response = delta_client.place_order(
-        #     product_id=product_id, 
-        #     size=order_size, 
-        #     side=side, 
-        #     order_type=OrderType.MARKET
-        # )
+        # Place the live market order on Delta Exchange
+        order_response = delta_client.place_order(
+            product_id=product_id, 
+            size=order_size, 
+            side=side, 
+            order_type=OrderType.MARKET
+        )
 
         return jsonify({
             "success": True, 
-            "action": side, 
-            "contract": contract, 
-            "size": order_size
+            "delta_response": order_response
         }), 200
 
     except Exception as e:
-        print(f"Error processing webhook: {str(e)}")
+        print(f"Error executing trade: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
