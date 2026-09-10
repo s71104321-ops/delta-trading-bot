@@ -27,7 +27,7 @@ def webhook():
         contract = strategy.get('contract', 'BTCUSD')
         raw_size = strategy.get('size', 1)
 
-        # Force order size to always be a positive integer
+        # Force order size to always be a positive integer to prevent negative size errors
         try:
             order_size = abs(int(raw_size))
         except (ValueError, TypeError):
@@ -39,7 +39,7 @@ def webhook():
         # BTCUSD product ID on Delta Exchange India is typically 27
         product_id = 27 
 
-        print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {order_size}")
+        print(f"Executing Live Order -> Product ID: {product_id}, Side: {side}, Size: {order_size}")
 
         # Place the live market order on Delta Exchange
         order_response = delta_client.place_order(
