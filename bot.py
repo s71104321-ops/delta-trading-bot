@@ -37,8 +37,15 @@ def webhook():
         if not data:
             return jsonify({"error": "No JSON payload received"}), 400
 
-        # Safely parse incoming JSON fields
-        product_id = int(data.get("product_id"))
+        # Support both product_id or symbol mapping from TradingView
+        symbol_map = {"BTCUSD": 27}
+        
+        product_id = data.get("product_id")
+        if not product_id and "symbol" in data:
+            sym = str(data.get("symbol")).upper()
+            product_id = symbol_map.get(sym, 27) # defaults to 27 for BTCUSD
+            
+        product_id = int(product_id)
         size = int(data.get("size", 1))
         side = str(data.get("side", "buy")).lower()
         order_type_str = str(data.get("order_type", "market")).lower()
