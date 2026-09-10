@@ -1,7 +1,7 @@
 import os
 import requests
 from flask import Flask, request, jsonify
-from delta_rest_client import DeltaRestClient, create_order_format
+from delta_rest_client import DeltaRestClient
 
 app = Flask(__name__)
 
@@ -37,17 +37,16 @@ def webhook():
         if not data:
             return jsonify({"error": "No JSON payload received"}), 400
 
-        # Extract parameters sent from TradingView alert message
-        product_id = int(data.get("product_id"))  # e.g., product id from Delta Exchange
+        # Safely parse and convert incoming JSON fields to correct types
+        product_id = int(data.get("product_id"))
         size = int(data.get("size", 1))
-        side = data.get("side", "buy")            # "buy" or "sell"
-        order_type = data.get("order_type", "market")
+        side = str(data.get("side", "buy")).lower()
+        order_type = str(data.get("order_type", "market")).lower()
 
-        print(f"Received Webhook -> Product ID: {product_id}, Side: {side}, Size: {size}, Type: {order_type}")
+        print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {size}, Type: {order_type}")
 
-        # Execute order on Delta Exchange India using delta-rest-client
-        if order_type.lower() == "market":
-            # Place market order format or direct call depending on client wrapper version
+        # Execute order on Delta Exchange India
+        if order_type == "market":
             order_response = delta_client.place_order(
                 product_id=product_id,
                 size=size,
@@ -55,18 +54,18 @@ def webhook():
                 order_type="market"
             )
         else:
-            price = data.get("price")
+            price = str(data.get("price"))
             order_response = delta_client.place_order(
                 product_id=product_id,
                 size=size,
                 side=side,
-                limit_price=str(price),
+                limit_price=price,
                 order_type="limit"
             )
 
         return jsonify({
             "status": "success", 
-            "message": "Order executed successfully on Delta",
+            "message": "Order executed successfully on Delta Exchange",
             "delta_response": order_response
         }), 200
 
