@@ -4,10 +4,10 @@ from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
 
-# Initialize your Delta Exchange client using environment variables
-API_KEY = os.getenv('API_KEY', '')
-API_SECRET = os.getenv('API_SECRET', '')
-BASE_URL = os.getenv('BASE_URL', 'https://api.india.delta.exchange')
+# Initialize your Delta Exchange client using environment variables with .strip() for safety
+API_KEY = os.getenv('API_KEY', '').strip()
+API_SECRET = os.getenv('API_SECRET', '').strip()
+BASE_URL = os.getenv('BASE_URL', 'https://api.india.delta.exchange').strip()
 
 delta_client = DeltaRestClient(
     base_url=BASE_URL,
