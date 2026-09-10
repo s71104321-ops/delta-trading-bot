@@ -1,7 +1,7 @@
 import os
 import requests
 from flask import Flask, request, jsonify
-from delta_rest_client import DeltaRestClient
+from delta_rest_client import DeltaRestClient, OrderType
 
 app = Flask(__name__)
 
@@ -37,21 +37,21 @@ def webhook():
         if not data:
             return jsonify({"error": "No JSON payload received"}), 400
 
-        # Safely parse and convert incoming JSON fields to correct types
+        # Safely parse incoming JSON fields
         product_id = int(data.get("product_id"))
         size = int(data.get("size", 1))
         side = str(data.get("side", "buy")).lower()
-        order_type = str(data.get("order_type", "market")).lower()
+        order_type_str = str(data.get("order_type", "market")).lower()
 
-        print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {size}, Type: {order_type}")
+        print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {size}, Type: {order_type_str}")
 
-        # Execute order on Delta Exchange India
-        if order_type == "market":
+        # Execute order on Delta Exchange using proper OrderType objects
+        if order_type_str == "market":
             order_response = delta_client.place_order(
                 product_id=product_id,
                 size=size,
                 side=side,
-                order_type="market"
+                order_type=OrderType.MARKET
             )
         else:
             price = str(data.get("price"))
@@ -60,7 +60,7 @@ def webhook():
                 size=size,
                 side=side,
                 limit_price=price,
-                order_type="limit"
+                order_type=OrderType.LIMIT
             )
 
         return jsonify({
