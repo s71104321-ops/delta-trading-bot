@@ -1,0 +1,3 @@
+flask
+delta-rest-client
+requests
