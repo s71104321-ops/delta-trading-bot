@@ -31,28 +31,39 @@ def get_ip():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Receives JSON payloads from TradingView alerts and executes trades via delta-rest-client."""
+    """Receives JSON payloads from TradingView alerts and executes trades safely."""
     try:
         data = request.json
         if not data:
             return jsonify({"error": "No JSON payload received"}), 400
 
-        # Support both product_id or symbol mapping from TradingView
+        # 1. Safe Product ID Mapping
         symbol_map = {"BTCUSD": 27}
-        
-        product_id = data.get("product_id")
-        if not product_id and "symbol" in data:
+        product_id_raw = data.get("product_id")
+        if not product_id_raw and "symbol" in data:
             sym = str(data.get("symbol")).upper()
-            product_id = symbol_map.get(sym, 27) # defaults to 27 for BTCUSD
-            
-        product_id = int(product_id)
-        size = int(data.get("size", 1))
+            product_id_raw = symbol_map.get(sym, 27)
+        
+        try:
+            product_id = int(product_id_raw)
+        except (ValueError, TypeError):
+            product_id = 27  # Default fallback to BTCUSD
+
+        # 2. Safe Size Parsing (prevents crashes if placeholder isn't evaluated)
+        raw_size = data.get("size", 1)
+        try:
+            size = int(float(str(raw_size))) # handles both strings, ints, or floats safely
+            if size <= 0:
+                size = 1
+        except (ValueError, TypeError):
+            size = 1  # Fallback size if TradingView passes an invalid string
+
         side = str(data.get("side", "buy")).lower()
         order_type_str = str(data.get("order_type", "market")).lower()
 
         print(f"Executing Order -> Product ID: {product_id}, Side: {side}, Size: {size}, Type: {order_type_str}")
 
-        # Execute order on Delta Exchange using proper OrderType objects
+        # Execute order on Delta Exchange
         if order_type_str == "market":
             order_response = delta_client.place_order(
                 product_id=product_id,
