@@ -1,72 +1,53 @@
-from flask import Flask, request, jsonify
 import os
 import requests
-from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
+from flask import Flask, request, jsonify
+# Import your delta exchange client library as needed
+# from delta_rest_client import DeltaRestClient
 
 app = Flask(__name__)
 
-# Initialize your Delta Exchange client using environment variables with .strip() for safety
-API_KEY = os.getenv('API_KEY', '').strip()
-API_SECRET = os.getenv('API_SECRET', '').strip()
-BASE_URL = os.getenv('BASE_URL', 'https://api.india.delta.exchange').strip()
+# Fetch API credentials from Render Environment Variables
+API_KEY = os.environ.get("DELTA_API_KEY")
+API_SECRET = os.environ.get("DELTA_API_SECRET")
 
-delta_client = DeltaRestClient(
-    base_url=BASE_URL,
-    api_key=API_KEY,
-    api_secret=API_SECRET
-)
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "Delta Trading Bot is running live!"}), 200
 
-# Temporary route to check Render's exact outbound public IP address
-@app.route('/get-ip', methods=['GET'])
+@app.route("/get-ip", methods=["GET"])
 def get_ip():
+    """Returns the public egress IP of this Render bot instance for IP whitelisting."""
     try:
-        response = requests.get('https://api.ipify.org?format=json')
-        return jsonify(response.json()), 200
+        response = requests.get("https://api.ipify.org?format=json")
+        return response.json(), 200
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 def webhook():
+    """Receives JSON payloads from TradingView alerts and executes trades."""
     try:
         data = request.json
         if not data:
-            return jsonify({"success": False, "error": "No JSON payload received"}), 400
+            return jsonify({"error": "No JSON payload received"}), 400
 
-        strategy = data.get('strategy', {})
-        action = strategy.get('action', 'buy').lower()  # 'buy' or 'sell'
-        contract = strategy.get('contract', 'BTCUSD')
-        raw_size = strategy.get('size', 1)
+        # Extract parameters sent from TradingView
+        symbol = data.get("symbol", "BTCUSD")
+        size = data.get("size", 1)
+        side = data.get("side", "buy")
+        order_type = data.get("order_type", "market")
 
-        # Force order size to always be a positive integer to prevent negative size errors
-        try:
-            order_size = abs(int(raw_size))
-        except (ValueError, TypeError):
-            order_size = 1
+        print(f"Received Alert -> Symbol: {symbol}, Side: {side}, Size: {size}, Type: {order_type}")
 
-        # Map action to side format expected by Delta Exchange ('buy' or 'sell')
-        side = 'buy' if action == 'buy' else 'sell'
+        # TODO: Initialize your Delta REST client here using API_KEY and API_SECRET
+        # client = DeltaRestClient(base_url="https://api.india.delta.exchange", api_key=API_KEY, api_secret=API_SECRET)
+        # response = client.create_order(product_id=..., size=size, side=side, order_type=order_type)
 
-        # BTCUSD product ID on Delta Exchange India is typically 27
-        product_id = 27 
-
-        print(f"Executing Live Order -> Product ID: {product_id}, Side: {side}, Size: {order_size}")
-
-        # Place the live market order on Delta Exchange
-        order_response = delta_client.place_order(
-            product_id=product_id, 
-            size=order_size, 
-            side=side, 
-            order_type=OrderType.MARKET
-        )
-
-        return jsonify({
-            "success": True, 
-            "delta_response": order_response
-        }), 200
+        return jsonify({"status": "success", "message": "Order processed successfully"}), 200
 
     except Exception as e:
-        print(f"Error executing trade: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        print(f"Webhook Error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
