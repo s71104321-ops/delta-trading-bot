@@ -1,4 +1,3 @@
-flask
-delta-rest-client
+Flask
 requests
-gunicorn
+delta-rest-client
