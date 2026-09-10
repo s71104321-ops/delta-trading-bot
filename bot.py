@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os
+import requests
 from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
@@ -14,6 +15,15 @@ delta_client = DeltaRestClient(
     api_key=API_KEY,
     api_secret=API_SECRET
 )
+
+# Temporary route to check Render's exact outbound public IP address
+@app.route('/get-ip', methods=['GET'])
+def get_ip():
+    try:
+        response = requests.get('https://api.ipify.org?format=json')
+        return jsonify(response.json()), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
