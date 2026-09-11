@@ -4,31 +4,39 @@ from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
 
-# Fetch API credentials explicitly from environment variables
-DELTA_API_KEY = os.getenv('DELTA_API_KEY')
-DELTA_API_SECRET = os.getenv('DELTA_API_SECRET')
+# Check multiple possible environment variable names to catch any naming mismatch
+DELTA_API_KEY = os.getenv('DELTA_API_KEY') or os.getenv('API_KEY')
+DELTA_API_SECRET = os.getenv('DELTA_API_SECRET') or os.getenv('API_SECRET')
 
-# Debug check to confirm environment variables are present
-if not DELTA_API_KEY or not DELTA_API_SECRET:
-    print("WARNING: DELTA_API_KEY or DELTA_API_SECRET environment variables are missing or empty!")
+# Debug logs to help diagnose without exposing secrets
+print(f"DEBUG: API Key loaded? {bool(DELTA_API_KEY)}")
+print(f"DEBUG: API Secret loaded? {bool(DELTA_API_SECRET)}")
 
 BASE_URL = "https://api.india.delta.exchange"
 
-# Initialize Delta client
-delta_client = DeltaRestClient(
-    base_url=BASE_URL,
-    api_key=DELTA_API_KEY,
-    api_secret=DELTA_API_SECRET
-)
+# Initialize Delta client only if keys exist to prevent crashing on boot
+delta_client = None
+if DELTA_API_KEY and DELTA_API_SECRET:
+    delta_client = DeltaRestClient(
+        base_url=BASE_URL,
+        api_key=DELTA_API_KEY,
+        api_secret=DELTA_API_SECRET
+    )
 
 BTC_PRODUCT_ID = 27  # Update with your specific product ID if needed
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Runtime verification for keys
-        if not DELTA_API_KEY or not DELTA_API_SECRET:
-            return jsonify({"status": "error", "message": "Api_key or Api_secret missing"}), 400
+        global delta_client
+        if not delta_client:
+            # Re-check in case environment variables populated late
+            k = os.getenv('DELTA_API_KEY') or os.getenv('API_KEY')
+            s = os.getenv('DELTA_API_SECRET') or os.getenv('API_SECRET')
+            if k and s:
+                delta_client = DeltaRestClient(base_url=BASE_URL, api_key=k, api_secret=s)
+            else:
+                return jsonify({"status": "error", "message": "Api_key or Api_secret missing"}), 400
 
         data = request.json
         if not data:
