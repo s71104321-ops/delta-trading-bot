@@ -1,7 +1,22 @@
 import os
 from flask import Flask, request, jsonify
+from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
+
+# Initialize Delta Exchange Client securely via environment variables
+DELTA_API_KEY = os.getenv('DELTA_API_KEY')
+DELTA_API_SECRET = os.getenv('DELTA_API_SECRET')
+BASE_URL = "https://api.india.delta.exchange"  # Use production/testnet endpoint as appropriate
+
+delta_client = DeltaRestClient(
+    base_url=BASE_URL,
+    api_key=DELTA_API_KEY,
+    api_secret=DELTA_API_SECRET
+)
+
+# Define your target BTC product ID (e.g., BTC perpetual contract ID on Delta)
+BTC_PRODUCT_ID = 27  # Update with your specific product ID if needed
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -19,17 +34,29 @@ def webhook():
         print(f"[{alert_name}] Signal Received -> Action: {action}, Position: {market_pos}, Contracts: {contracts}, Price: {price}")
 
         # --- STEP 1: AUTO-CANCEL STALE ORDERS ---
-        # Wipes out hanging stop-loss or limit orders from the previous trade
+        # Wipes out hanging stop-loss or limit orders from previous trade cycles
+        try:
+            open_orders = delta_client.get_live_orders(product_id=BTC_PRODUCT_ID)
+            for order in open_orders:
+                delta_client.cancel_order(product_id=BTC_PRODUCT_ID, order_id=order['id'])
+        except Exception as cancel_err:
+            print(f"Order cancellation warning: {str(cancel_err)}")
 
         # --- STEP 2: AUTO-FILL & REVERSE EXECUTION ---
-        if action == 'buy':
-            pass
-        elif action == 'sell':
-            pass
+        order_side = 'buy' if action == 'buy' else 'sell'
+        
+        order_response = delta_client.place_order(
+            product_id=BTC_PRODUCT_ID,
+            size=int(contracts),
+            side=order_side,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC
+        )
 
         return jsonify({
             "status": "success",
-            "message": f"Successfully processed {action} order for alert: {alert_name}"
+            "message": f"Successfully executed {order_side} market order for {contracts} contracts.",
+            "exchange_response": order_response
         }), 200
 
     except Exception as e:
