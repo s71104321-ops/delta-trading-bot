@@ -13,9 +13,8 @@ API_SECRET = os.getenv("DELTA_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
-def generate_signature(method, endpoint, payload, timestamp, secret):
-    # Official Delta signature format: method + timestamp + endpoint + payload
-    signature_data = method + timestamp + endpoint + payload
+def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
+    signature_data = method + timestamp + endpoint + query_string + payload_string
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
@@ -37,44 +36,39 @@ def webhook():
     contracts = int(data.get('contracts', 1))
 
     try:
-        # 1. Fetch products list from Delta India
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
         
         product_id = None
-        # Extract base asset (e.g., 'BTC' from 'BTCUSDT' or 'BTC/USDT')
         base_asset = ticker.replace("USDT", "").replace("/", "").replace("-", "")
         
         for p in products:
             p_symbol = p.get('symbol', '').upper()
-            # Match contracts that start with the base asset (e.g. BTCUSD)
             if p_symbol.startswith(base_asset):
                 product_id = p.get('id')
                 break
         
-        # Fallback default product ID for Bitcoin Perpetual if name matching fails
         if not product_id and "BTC" in base_asset:
-            product_id = 27  # Default product ID for BTCUSD on Delta
+            product_id = 117569  # Fallback to the discovered BTC product ID
 
         if not product_id:
             return jsonify({"message": f"Delta native product not found for {ticker}", "status": "error"}), 400
 
-        # 2. Prepare Order Payload
         path = "/v2/orders"
         method = "POST"
         
         payload = {
             "product_id": int(product_id),
             "size": contracts,
-            "side": action, # 'buy' or 'sell'
+            "side": action,
             "order_type": "market_order"
         }
         
         payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
-        signature = generate_signature(method, path, payload_string, timestamp, API_SECRET)
+        signature = generate_signature(method, path, "", payload_string, timestamp, API_SECRET)
         
         headers = {
             "api-key": API_KEY,
