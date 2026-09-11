@@ -16,7 +16,6 @@ BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
 def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
     signature_data = method + timestamp + endpoint + query_string + payload_string
-    print(f"DEBUG Signature Data: {signature_data}") # Will show in Render logs
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
@@ -67,6 +66,7 @@ def webhook():
             "order_type": "market_order"
         }
         
+        # CRUGIAL: Compact serialization with zero spaces to match Delta's signature parser
         payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
@@ -79,6 +79,7 @@ def webhook():
             "Content-Type": "application/json"
         }
 
+        # Pass payload_string explicitly to data= so spaces aren't re-added
         order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string)
         res_data = order_resp.json()
 
@@ -87,7 +88,7 @@ def webhook():
             return jsonify({"message": "Order executed successfully", "data": res_data, "status": "success"}), 200
         else:
             print(f"Delta API Error: {res_data}")
-            return jsonify({"message": res_data, "status": "error"}), 400
+            return jsonify({"message": res_data, "status": "error"}, 400)
 
     except Exception as e:
         print(f"Execution Error: {str(e)}")
