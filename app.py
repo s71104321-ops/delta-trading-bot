@@ -2,6 +2,7 @@ import os
 import time
 import hmac
 import hashlib
+import json
 import requests
 from flask import Flask, request, jsonify
 
@@ -12,14 +13,13 @@ API_SECRET = os.getenv("DELTA_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
-def generate_signature(secret, method, path, query_string="", payload_string=""):
-    message = method + path + query_string + payload_string
-    signature = hmac.new(
-        secret.encode('utf-8'),
-        message.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    return signature
+def generate_signature(method, endpoint, payload, timestamp, secret):
+    # Official Delta signature format: method + timestamp + endpoint + payload
+    signature_data = method + timestamp + endpoint + payload
+    message = bytes(signature_data, 'utf-8')
+    secret_bytes = bytes(secret, 'utf-8')
+    hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
+    return hash_obj.hexdigest()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -36,23 +36,27 @@ def webhook():
     action = data.get('action', '').lower()
     contracts = int(data.get('contracts', 1))
 
-    # Map product ID or symbol (Delta India product ids can be queried, or we map BTCUSDT to product_id)
-    # For BTC-PERP or standard USDT contracts on Delta, product_id for BTCUSDT is typically fetched or mapped.
-    # Let's map common ones or resolve dynamically:
     try:
-        # 1. Fetch products list from Delta India to get the exact product_id for the ticker
+        # 1. Fetch products list from Delta India
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
         
         product_id = None
-        target_symbol = ticker.replace("/", "").replace("-", "")
+        # Extract base asset (e.g., 'BTC' from 'BTCUSDT' or 'BTC/USDT')
+        base_asset = ticker.replace("USDT", "").replace("/", "").replace("-", "")
+        
         for p in products:
-            p_symbol = p.get('symbol', '').replace("/", "").replace("-", "")
-            if p_symbol == target_symbol or target_symbol in p_symbol:
+            p_symbol = p.get('symbol', '').upper()
+            # Match contracts that start with the base asset (e.g. BTCUSD)
+            if p_symbol.startswith(base_asset):
                 product_id = p.get('id')
                 break
         
+        # Fallback default product ID for Bitcoin Perpetual if name matching fails
+        if not product_id and "BTC" in base_asset:
+            product_id = 27  # Default product ID for BTCUSD on Delta
+
         if not product_id:
             return jsonify({"message": f"Delta native product not found for {ticker}", "status": "error"}), 400
 
@@ -64,16 +68,13 @@ def webhook():
             "product_id": int(product_id),
             "size": contracts,
             "side": action, # 'buy' or 'sell'
-            "order_type": "market"
+            "order_type": "market_order"
         }
         
-        import json
-        payload_string = json.dumps(payload)
+        payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
-        # Delta signature format includes timestamp depending on endpoint version, 
-        # using native headers:
-        signature = generate_signature(API_SECRET, method, path, "", payload_string)
+        signature = generate_signature(method, path, payload_string, timestamp, API_SECRET)
         
         headers = {
             "api-key": API_KEY,
