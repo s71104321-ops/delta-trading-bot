@@ -34,7 +34,6 @@ def webhook():
         print(f"[{alert_name}] Signal Received -> Action: {action}, Position: {market_pos}, Contracts: {contracts}, Price: {price}")
 
         # --- STEP 1: AUTO-CANCEL STALE ORDERS ---
-        # Wipes out hanging stop-loss or limit orders from previous trade cycles
         try:
             open_orders = delta_client.get_live_orders(product_id=BTC_PRODUCT_ID)
             for order in open_orders:
@@ -68,4 +67,5 @@ def health_check():
     return jsonify({"status": "online", "bot": "Delta Exchange DPO RMA Bot"}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
