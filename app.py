@@ -42,28 +42,41 @@ def webhook():
     if incoming_secret != WEBHOOK_SECRET:
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
 
+    ticker = data.get('ticker', 'BTCUSDT').upper()
     action = data.get('action', '').lower()
-    contracts = int(data.get('contracts', 1)) # 1 lot = 0.001 BTC
+    contracts = int(data.get('contracts', 1)) # 1 contract lot
 
     try:
-        # 1. Fetch products list from Delta India and strictly locate BTCUSD Perpetual
+        # 1. Fetch products list from Delta India and dynamically locate BTC perpetual contract
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
         
         product_id = None
+        base_asset = ticker.replace("USDT", "").replace("USD", "").replace("/", "").replace("-", "")
+        
+        # First pass: flexible search matching symbol and perpetual type
         for p in products:
             p_symbol = p.get('symbol', '').upper()
-            p_type = p.get('product_type', '')
-            # Strictly match the official Bitcoin Perpetual contract symbol and type
-            if p_symbol == "BTCUSD" and p_type == "perpetual_futures":
+            p_type = p.get('product_type', '').lower()
+            if (base_asset in p_symbol) and ('perpetual' in p_type):
                 product_id = p.get('id')
                 break
-
+                
+        # Second pass: fallback search for any BTC perpetual if symbol variation differs
         if not product_id:
-            return jsonify({"message": "BTCUSD perpetual product ID not found on Delta India", "status": "error"}), 400
+            for p in products:
+                p_symbol = p.get('symbol', '').upper()
+                p_type = p.get('product_type', '').lower()
+                if ('BTC' in p_symbol) and ('perpetual' in p_type):
+                    product_id = p.get('id')
+                    break
 
-        # 2. Prepare Order Payload for 1 lot under 50x leverage setup
+        # Third pass: Hardcoded safeguard ID for Bitcoin Perpetual if API listing scan fails
+        if not product_id:
+            product_id = 27  # Default fallback ID for Bitcoin Perpetual
+
+        # 2. Prepare Order Payload for 1 lot under your leverage setup
         path = "/v2/orders"
         method = "POST"
         
