@@ -4,17 +4,11 @@ from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
 
-# Check multiple possible environment variable names to catch any naming mismatch
 DELTA_API_KEY = os.getenv('DELTA_API_KEY') or os.getenv('API_KEY')
 DELTA_API_SECRET = os.getenv('DELTA_API_SECRET') or os.getenv('API_SECRET')
 
-# Debug logs to help diagnose without exposing secrets
-print(f"DEBUG: API Key loaded? {bool(DELTA_API_KEY)}")
-print(f"DEBUG: API Secret loaded? {bool(DELTA_API_SECRET)}")
-
 BASE_URL = "https://api.india.delta.exchange"
 
-# Initialize Delta client only if keys exist to prevent crashing on boot
 delta_client = None
 if DELTA_API_KEY and DELTA_API_SECRET:
     delta_client = DeltaRestClient(
@@ -23,14 +17,13 @@ if DELTA_API_KEY and DELTA_API_SECRET:
         api_secret=DELTA_API_SECRET
     )
 
-BTC_PRODUCT_ID = 27  # Update with your specific product ID if needed
+BTC_PRODUCT_ID = 27  # BTCUSD product ID
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         global delta_client
         if not delta_client:
-            # Re-check in case environment variables populated late
             k = os.getenv('DELTA_API_KEY') or os.getenv('API_KEY')
             s = os.getenv('DELTA_API_SECRET') or os.getenv('API_SECRET')
             if k and s:
@@ -44,13 +37,11 @@ def webhook():
 
         alert_name = data.get('alert_name', 'Unknown Alert')
         action = data.get('action')          # 'buy' or 'sell'
-        market_pos = data.get('market_position') # 'long', 'short', or 'flat'
-        contracts = float(data.get('contracts', 0))
-        price = data.get('price')
+        contracts = int(float(data.get('contracts', 1)))
 
-        print(f"[{alert_name}] Signal Received -> Action: {action}, Position: {market_pos}, Contracts: {contracts}, Price: {price}")
+        print(f"[{alert_name}] Signal Received -> Action: {action}, Target Contracts: {contracts}")
 
-        # --- STEP 1: AUTO-CANCEL STALE ORDERS ---
+        # --- STEP 1: CANCEL OPEN STALE ORDERS ---
         try:
             open_orders = delta_client.get_live_orders(product_id=BTC_PRODUCT_ID)
             for order in open_orders:
@@ -58,20 +49,45 @@ def webhook():
         except Exception as cancel_err:
             print(f"Order cancellation warning: {str(cancel_err)}")
 
-        # --- STEP 2: AUTO-FILL & REVERSE EXECUTION ---
-        order_side = 'buy' if action == 'buy' else 'sell'
-        
+        # --- STEP 2: CHECK CURRENT POSITION FOR REVERSAL ---
+        current_position_size = 0
+        try:
+            position = delta_client.get_position(product_id=BTC_PRODUCT_ID)
+            if position and 'size' in position:
+                current_position_size = int(position['size']) # Positive for Long, Negative for Short
+        except Exception as pos_err:
+            print(f"Position check warning: {str(pos_err)}")
+
+        # --- STEP 3: CALCULATE REVERSAL SIZES ---
+        # If action is 'buy': we want to end up Long `contracts`. 
+        # If we are currently Short (-1), we need to buy (1 [to close] + 1 [to open long]) = 2 contracts.
+        target_side = 'buy' if action == 'buy' else 'sell'
+        execution_size = contracts
+
+        if current_position_size != 0:
+            is_long = current_position_size > 0
+            if (is_long and action == 'sell') or (not is_long and action == 'buy'):
+                # Flipping direction requires covering the existing size PLUS taking the new position size
+                execution_size = abs(current_position_size) + contracts
+            elif (is_long and action == 'buy') or (not is_long and action == 'sell'):
+                # Already in the correct direction, no action or adjustment needed
+                if abs(current_position_size) >= contracts:
+                    print("Already in position with sufficient size. Skipping.")
+                    return jsonify({"status": "success", "message": "Position already matches target."}), 200
+
+        print(f"Executing {target_side} market order for size: {execution_size} (Current Pos: {current_position_size})")
+
         order_response = delta_client.place_order(
             product_id=BTC_PRODUCT_ID,
-            size=int(contracts),
-            side=order_side,
+            size=execution_size,
+            side=target_side,
             order_type=OrderType.MARKET,
             time_in_force=TimeInForce.GTC
         )
 
         return jsonify({
             "status": "success",
-            "message": f"Successfully executed {order_side} market order for {contracts} contracts.",
+            "message": f"Successfully reversed/executed {target_side} order for {execution_size} contracts.",
             "exchange_response": order_response
         }), 200
 
