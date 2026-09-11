@@ -15,9 +15,8 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
 def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
-    # Delta India precise signature format: method + timestamp + endpoint + query_string + payload_string
     signature_data = method + timestamp + endpoint + query_string + payload_string
-    print(f"DEBUG Signature Data: {signature_data}") # Visible in Render logs
+    print(f"DEBUG Signature Data: {signature_data}")
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
@@ -45,10 +44,10 @@ def webhook():
 
     ticker = data.get('ticker', 'BTCUSDT').upper()
     action = data.get('action', '').lower()
-    contracts = int(data.get('contracts', 1))
+    contracts = int(data.get('contracts', 1)) # Default to 1 lot
 
     try:
-        # 1. Fetch products list from Delta India to get the correct product_id
+        # 1. Fetch products list from Delta India to locate the perpetual contract ID
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
@@ -58,29 +57,30 @@ def webhook():
         
         for p in products:
             p_symbol = p.get('symbol', '').upper()
-            if p_symbol.startswith(base_asset):
+            p_type = p.get('product_type', '')
+            if base_asset in p_symbol and 'perpetual' in p_type:
                 product_id = p.get('id')
                 break
         
-        # Fallback default product ID for Bitcoin Perpetual if name matching fails
+        # Fallback default product ID for BTC Perpetual if name matching fails
         if not product_id and "BTC" in base_asset:
             product_id = 117569  
 
         if not product_id:
             return jsonify({"message": f"Delta native product not found for {ticker}", "status": "error"}), 400
 
-        # 2. Prepare Order Payload
+        # 2. Prepare Order Payload for 1 lot
         path = "/v2/orders"
         method = "POST"
         
         payload = {
             "product_id": int(product_id),
-            "size": contracts,
-            "side": action, # 'buy' or 'sell'
+            "size": contracts, # 1 contract lot
+            "side": action,    # 'buy' or 'sell'
             "order_type": "market_order"
         }
         
-        # CRUCIAL: Compact serialization with zero spaces to match Delta's signature parser
+        # Compact serialization with zero spaces to match Delta's signature parser
         payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
@@ -93,7 +93,6 @@ def webhook():
             "Content-Type": "application/json"
         }
 
-        # Pass payload_string explicitly to data= so spaces aren't re-added
         order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string)
         res_data = order_resp.json()
 
