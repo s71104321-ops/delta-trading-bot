@@ -4,7 +4,6 @@ import ccxt
 
 app = Flask(__name__)
 
-# Load environment variables configured on Render
 API_KEY = os.getenv("DELTA_API_KEY")
 API_SECRET = os.getenv("DELTA_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
@@ -15,7 +14,7 @@ exchange = ccxt.delta({
     'secret': API_SECRET,
     'enableRateLimit': True,
     'options': {
-        'defaultType': 'future'  # Ensure it targets derivatives/futures
+        'defaultType': 'future'
     },
     'urls': {
         'api': {
@@ -32,20 +31,26 @@ def webhook():
     if not data:
         return jsonify({"message": "Invalid JSON payload", "status": "error"}), 400
 
-    # Verify webhook secret authorization
     incoming_secret = data.get('webhook_secret')
     if incoming_secret != WEBHOOK_SECRET:
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
 
-    # Extract alert parameters
-    ticker = data.get('ticker', 'BTCUSDT')
-    action = data.get('action', '').lower()  # 'buy' or 'sell'
+    ticker = data.get('ticker', 'BTCUSDT').upper()
+    action = data.get('action', '').lower()
     contracts = float(data.get('contracts', 1))
 
-    # Direct ticker formatting for Delta India
-    symbol = ticker.replace("/", "").upper()
-
     try:
+        # Step 1: Load markets so CCXT can recognize trading pairs
+        exchange.load_markets()
+
+        # Step 2: Format ticker into CCXT unified perpetual futures format
+        if "USDT" in ticker and "/" not in ticker:
+            base = ticker.replace("USDT", "")
+            symbol = f"{base}/USDT:USDT"
+        else:
+            symbol = ticker
+
+        # Step 3: Execute market order
         if action == 'buy':
             order = exchange.create_market_order(symbol, 'buy', contracts)
             print(f"1-Lot LONG Executed: {order}")
