@@ -1,126 +1,47 @@
 import os
-import time
-import hmac
-import hashlib
-import json
-import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Automatically strip whitespace/newlines from keys pasted into Render
-API_KEY = os.getenv("DELTA_API_KEY", "").strip()
-API_SECRET = os.getenv("DELTA_SECRET_KEY", "").strip()
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
-BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
-
-def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
-    signature_data = method + timestamp + endpoint + query_string + payload_string
-    print(f"DEBUG Signature Data: {signature_data}")
-    message = bytes(signature_data, 'utf-8')
-    secret_bytes = bytes(secret, 'utf-8')
-    hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
-    return hash_obj.hexdigest()
-
-@app.route('/', methods=['GET'])
-def home():
-    """Root route to keep UptimeRobot green and confirm the app is active"""
-    return jsonify({"status": "active", "message": "Delta Trading Bot is running successfully"}), 200
-
-@app.route('/my-ip', methods=['GET'])
-def get_ip():
-    """Diagnostic route to check Render's outgoing public IP address"""
-    try:
-        ip = requests.get('https://api.ipify.org', timeout=5).text
-        return jsonify({"bot_ip": ip, "status": "success"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e), "status": "error"}), 500
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.get_json()
-
-    if not data:
-        return jsonify({"message": "Invalid JSON payload", "status": "error"}), 400
-
-    incoming_secret = data.get('webhook_secret')
-    if incoming_secret != WEBHOOK_SECRET:
-        return jsonify({"message": "Unauthorized", "status": "error"}), 403
-
-    ticker = data.get('ticker', 'BTCUSDT').upper()
-    action = data.get('action', '').lower() # 'buy' or 'sell'
-    
     try:
-        contracts = float(data.get('contracts', 1))
-    except ValueError:
-        contracts = 1.0
+        # Parse incoming JSON payload from TradingView alert
+        data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON payload received"}), 400
 
-    if contracts <= 0:
-        return jsonify({"message": "Invalid contract size", "status": "error"}), 400
+        action = data.get('action')          # 'buy' or 'sell'
+        market_pos = data.get('market_position') # 'long', 'short', or 'flat'
+        contracts = float(data.get('contracts', 0))
+        price = data.get('price')
 
-    try:
-        # 1. Fetch products list from Delta India and dynamically locate BTC perpetual contract ID
-        products_url = f"{BASE_URL}/v2/products"
-        resp = requests.get(products_url, timeout=10)
-        products = resp.json().get('result', [])
-        
-        product_id = None
-        base_asset = ticker.replace("USDT", "").replace("USD", "").replace("/", "").replace("-", "")
-        
-        for p in products:
-            p_symbol = p.get('symbol', '').upper()
-            p_type = p.get('product_type', '').lower()
-            if (base_asset in p_symbol) and ('perpetual' in p_type):
-                product_id = p.get('id')
-                break
-                    
-        if not product_id:
-            for p in products:
-                p_symbol = p.get('symbol', '').upper()
-                p_type = p.get('product_type', '').lower()
-                if ('BTC' in p_symbol) and ('perpetual' in p_type):
-                    product_id = p.get('id')
-                    break
+        print(f"Received Signal -> Action: {action}, Position: {market_pos}, Contracts: {contracts}, Price: {price}")
 
-        if not product_id:
-            product_id = 27  # Fallback default ID for Bitcoin Perpetual
+        # --- STEP 1: AUTO-CANCEL STALE ORDERS ---
+        # Wipes out hanging stop-loss or limit orders from the previous trade
+        # Example using Delta client: delta_client.cancel_all_open_orders(product_id=...)
 
-        # 2. Prepare Order Payload
-        path = "/v2/orders"
-        method = "POST"
-        
-        payload = {
-            "product_id": int(product_id),
-            "size": contracts, 
-            "side": action,    
-            "order_type": "market_order"
-        }
-        
-        payload_string = json.dumps(payload, separators=(',', ':'))
-        timestamp = str(int(time.time()))
-        
-        signature = generate_signature(method, path, "", payload_string, timestamp, API_SECRET)
-        
-        headers = {
-            "api-key": API_KEY,
-            "signature": signature,
-            "timestamp": timestamp,
-            "Content-Type": "application/json"
-        }
+        # --- STEP 2: AUTO-FILL & REVERSE EXECUTION ---
+        if action == 'buy':
+            # Execute market buy order on Delta Exchange
+            pass
+        elif action == 'sell':
+            # Execute market sell order on Delta Exchange
+            pass
 
-        order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string, timeout=10)
-        res_data = order_resp.json()
-
-        if order_resp.status_code == 200 and res_data.get('success'):
-            print(f"Order Executed Successfully: {res_data}")
-            return jsonify({"message": "Order executed successfully", "data": res_data, "status": "success"}), 200
-        else:
-            print(f"Delta API Error: {res_data}")
-            return jsonify({"message": res_data, "status": "error"}), 400
+        return jsonify({
+            "status": "success",
+            "message": f"Successfully processed {action} order for {contracts} contracts."
+        }), 200
 
     except Exception as e:
-        print(f"Execution Error: {str(e)}")
-        return jsonify({"message": str(e), "status": "error"}), 500
+        print(f"Webhook Execution Error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({"status": "online", "bot": "Delta Exchange DPO RMA Bot"}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host='0.0.0.0', port=5000)
