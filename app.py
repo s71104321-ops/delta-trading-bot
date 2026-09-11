@@ -8,13 +8,15 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-API_KEY = os.getenv("DELTA_API_KEY")
-API_SECRET = os.getenv("DELTA_SECRET_KEY")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+# Automatically strip whitespace/newlines from keys pasted into Render
+API_KEY = os.getenv("DELTA_API_KEY", "").strip()
+API_SECRET = os.getenv("DELTA_SECRET_KEY", "").strip()
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
 def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
     signature_data = method + timestamp + endpoint + query_string + payload_string
+    print(f"DEBUG Signature Data: {signature_data}") # Will show in Render logs
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
@@ -50,7 +52,7 @@ def webhook():
                 break
         
         if not product_id and "BTC" in base_asset:
-            product_id = 117569  # Fallback to the discovered BTC product ID
+            product_id = 117569  # Fallback to BTC product ID
 
         if not product_id:
             return jsonify({"message": f"Delta native product not found for {ticker}", "status": "error"}), 400
