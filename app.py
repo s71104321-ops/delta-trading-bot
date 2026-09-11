@@ -32,7 +32,7 @@ def webhook():
     if not data:
         return jsonify({"message": "Invalid JSON payload", "status": "error"}), 400
 
-    # Verify webhook secret authorization (using 'webhook_secret' to avoid CCXT conflict)
+    # Verify webhook secret authorization
     incoming_secret = data.get('webhook_secret')
     if incoming_secret != WEBHOOK_SECRET:
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
@@ -42,8 +42,8 @@ def webhook():
     action = data.get('action', '').lower()  # 'buy' or 'sell'
     contracts = float(data.get('contracts', 1))
 
-    # Format symbol for CCXT derivatives format
-    symbol = f"{ticker[:3]}/{ticker[3:]}:USDT" if "/" not in ticker else ticker
+    # Direct ticker formatting for Delta India
+    symbol = ticker.replace("/", "").upper()
 
     try:
         if action == 'buy':
