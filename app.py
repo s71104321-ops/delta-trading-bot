@@ -26,8 +26,8 @@ def webhook():
     if not data:
         return jsonify({"message": "Invalid JSON payload", "status": "error"}), 400
 
-    # Verify webhook secret authorization
-    incoming_secret = data.get('secret')
+    # Verify webhook secret authorization (using 'webhook_secret' to avoid CCXT conflict)
+    incoming_secret = data.get('webhook_secret')
     if incoming_secret != WEBHOOK_SECRET:
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
 
@@ -36,13 +36,11 @@ def webhook():
     action = data.get('action', '').lower()  # 'buy' or 'sell'
     contracts = float(data.get('contracts', 1))
 
-    # Format symbol for CCXT if necessary (e.g., BTCUSDT -> BTC/USDT:USDT or similar based on exchange requirements)
-    # If your setup already sends the exact CCXT symbol format, you can use `ticker` directly.
+    # Format symbol for CCXT if necessary
     symbol = f"{ticker[:3]}/{ticker[3:]}:USDT" if "/" not in ticker else ticker
 
     try:
         if action == 'buy':
-            # Correct CCXT syntax: create_market_order(symbol, side, amount)
             order = exchange.create_market_order(symbol, 'buy', contracts)
             print(f"1-Lot LONG Executed: {order}")
         elif action == 'sell':
