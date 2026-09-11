@@ -15,8 +15,9 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
 def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
+    # Delta India precise signature format: method + timestamp + endpoint + query_string + payload_string
     signature_data = method + timestamp + endpoint + query_string + payload_string
-    print(f"DEBUG Signature Data: {signature_data}")
+    print(f"DEBUG Signature Data: {signature_data}") # Visible in Render logs
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
@@ -43,11 +44,19 @@ def webhook():
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
 
     ticker = data.get('ticker', 'BTCUSDT').upper()
-    action = data.get('action', '').lower()
-    contracts = int(data.get('contracts', 1)) # 1 contract lot
+    action = data.get('action', '').lower() # 'buy' or 'sell'
+    
+    # Dynamically read contract size from TradingView with robust float handling
+    try:
+        contracts = float(data.get('contracts', 1))
+    except ValueError:
+        contracts = 1.0
+
+    if contracts <= 0:
+        return jsonify({"message": "Invalid contract size", "status": "error"}), 400
 
     try:
-        # 1. Fetch products list from Delta India and dynamically locate BTC perpetual contract
+        # 1. Fetch products list from Delta India and dynamically locate BTC perpetual contract ID
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
@@ -55,7 +64,7 @@ def webhook():
         product_id = None
         base_asset = ticker.replace("USDT", "").replace("USD", "").replace("/", "").replace("-", "")
         
-        # First pass: flexible search matching symbol and perpetual type
+        # Pass 1: Match exact symbol and perpetual product type
         for p in products:
             p_symbol = p.get('symbol', '').upper()
             p_type = p.get('product_type', '').lower()
@@ -63,7 +72,7 @@ def webhook():
                 product_id = p.get('id')
                 break
                 
-        # Second pass: fallback search for any BTC perpetual if symbol variation differs
+        # Pass 2: Fallback search for any BTC perpetual contract
         if not product_id:
             for p in products:
                 p_symbol = p.get('symbol', '').upper()
@@ -72,22 +81,22 @@ def webhook():
                     product_id = p.get('id')
                     break
 
-        # Third pass: Hardcoded safeguard ID for Bitcoin Perpetual if API listing scan fails
+        # Pass 3: Hardcoded safe default ID for BTC Perpetual (ID 27)
         if not product_id:
-            product_id = 27  # Default fallback ID for Bitcoin Perpetual
+            product_id = 27  
 
-        # 2. Prepare Order Payload for 1 lot under your leverage setup
+        # 2. Prepare Order Payload for Delta Exchange India Native REST API
         path = "/v2/orders"
         method = "POST"
         
         payload = {
             "product_id": int(product_id),
-            "size": contracts, # 1 contract lot
-            "side": action,    # 'buy' or 'sell'
+            "size": contracts, 
+            "side": action,    # Handles 'buy' (long/cover) and 'sell' (short/exit)
             "order_type": "market_order"
         }
         
-        # Compact serialization with zero spaces to match Delta's signature parser
+        # CRUCIAL: Compact serialization with zero spaces to ensure HMAC-SHA256 signature match
         payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
@@ -100,6 +109,7 @@ def webhook():
             "Content-Type": "application/json"
         }
 
+        # Submit explicitly using data=payload_string to avoid unexpected spaces
         order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string)
         res_data = order_resp.json()
 
