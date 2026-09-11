@@ -9,13 +9,19 @@ API_KEY = os.getenv("DELTA_API_KEY")
 API_SECRET = os.getenv("DELTA_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
-# Initialize CCXT exchange for Delta Exchange
+# Initialize CCXT exchange for Delta India with explicit production URL routing
 exchange = ccxt.delta({
     'apiKey': API_KEY,
     'secret': API_SECRET,
     'enableRateLimit': True,
     'options': {
         'defaultType': 'future'  # Ensure it targets derivatives/futures
+    },
+    'urls': {
+        'api': {
+            'public': 'https://api.india.delta.exchange',
+            'private': 'https://api.india.delta.exchange',
+        }
     }
 })
 
@@ -36,7 +42,7 @@ def webhook():
     action = data.get('action', '').lower()  # 'buy' or 'sell'
     contracts = float(data.get('contracts', 1))
 
-    # Format symbol for CCXT if necessary
+    # Format symbol for CCXT derivatives format
     symbol = f"{ticker[:3]}/{ticker[3:]}:USDT" if "/" not in ticker else ticker
 
     try:
