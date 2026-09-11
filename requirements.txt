@@ -1,4 +1,3 @@
-Flask
-requests
+flask
+ccxt
 gunicorn
-delta-rest-client
