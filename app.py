@@ -4,23 +4,32 @@ from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
 
 app = Flask(__name__)
 
-# Initialize Delta Exchange Client securely via environment variables
+# Fetch API credentials explicitly from environment variables
 DELTA_API_KEY = os.getenv('DELTA_API_KEY')
 DELTA_API_SECRET = os.getenv('DELTA_API_SECRET')
-BASE_URL = "https://api.india.delta.exchange"  # Use production/testnet endpoint as appropriate
 
+# Debug check to confirm environment variables are present
+if not DELTA_API_KEY or not DELTA_API_SECRET:
+    print("WARNING: DELTA_API_KEY or DELTA_API_SECRET environment variables are missing or empty!")
+
+BASE_URL = "https://api.india.delta.exchange"
+
+# Initialize Delta client
 delta_client = DeltaRestClient(
     base_url=BASE_URL,
     api_key=DELTA_API_KEY,
     api_secret=DELTA_API_SECRET
 )
 
-# Define your target BTC product ID (e.g., BTC perpetual contract ID on Delta)
 BTC_PRODUCT_ID = 27  # Update with your specific product ID if needed
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
+        # Runtime verification for keys
+        if not DELTA_API_KEY or not DELTA_API_SECRET:
+            return jsonify({"status": "error", "message": "Api_key or Api_secret missing"}), 400
+
         data = request.json
         if not data:
             return jsonify({"status": "error", "message": "No JSON payload received"}), 400
