@@ -15,13 +15,17 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 BASE_URL = os.getenv("BASE_URL", "https://api.india.delta.exchange")
 
 def generate_signature(method, endpoint, query_string, payload_string, timestamp, secret):
-    # Delta India precise signature format: method + timestamp + endpoint + query_string + payload_string
     signature_data = method + timestamp + endpoint + query_string + payload_string
-    print(f"DEBUG Signature Data: {signature_data}") # Visible in Render logs
+    print(f"DEBUG Signature Data: {signature_data}")
     message = bytes(signature_data, 'utf-8')
     secret_bytes = bytes(secret, 'utf-8')
     hash_obj = hmac.new(secret_bytes, message, hashlib.sha256)
     return hash_obj.hexdigest()
+
+@app.route('/', methods=['GET'])
+def home():
+    """Root route to keep UptimeRobot green and confirm the app is active"""
+    return jsonify({"status": "active", "message": "Delta Trading Bot is running successfully"}), 200
 
 @app.route('/my-ip', methods=['GET'])
 def get_ip():
@@ -46,7 +50,6 @@ def webhook():
     ticker = data.get('ticker', 'BTCUSDT').upper()
     action = data.get('action', '').lower() # 'buy' or 'sell'
     
-    # Dynamically read contract size from TradingView with robust float handling
     try:
         contracts = float(data.get('contracts', 1))
     except ValueError:
@@ -58,21 +61,19 @@ def webhook():
     try:
         # 1. Fetch products list from Delta India and dynamically locate BTC perpetual contract ID
         products_url = f"{BASE_URL}/v2/products"
-        resp = requests.get(products_url)
+        resp = requests.get(products_url, timeout=10)
         products = resp.json().get('result', [])
         
         product_id = None
         base_asset = ticker.replace("USDT", "").replace("USD", "").replace("/", "").replace("-", "")
         
-        # Pass 1: Match exact symbol and perpetual product type
         for p in products:
             p_symbol = p.get('symbol', '').upper()
             p_type = p.get('product_type', '').lower()
             if (base_asset in p_symbol) and ('perpetual' in p_type):
                 product_id = p.get('id')
                 break
-                
-        # Pass 2: Fallback search for any BTC perpetual contract
+                    
         if not product_id:
             for p in products:
                 p_symbol = p.get('symbol', '').upper()
@@ -81,22 +82,20 @@ def webhook():
                     product_id = p.get('id')
                     break
 
-        # Pass 3: Hardcoded safe default ID for BTC Perpetual (ID 27)
         if not product_id:
-            product_id = 27  
+            product_id = 27  # Fallback default ID for Bitcoin Perpetual
 
-        # 2. Prepare Order Payload for Delta Exchange India Native REST API
+        # 2. Prepare Order Payload
         path = "/v2/orders"
         method = "POST"
         
         payload = {
             "product_id": int(product_id),
             "size": contracts, 
-            "side": action,    # Handles 'buy' (long/cover) and 'sell' (short/exit)
+            "side": action,    
             "order_type": "market_order"
         }
         
-        # CRUCIAL: Compact serialization with zero spaces to ensure HMAC-SHA256 signature match
         payload_string = json.dumps(payload, separators=(',', ':'))
         timestamp = str(int(time.time()))
         
@@ -109,8 +108,7 @@ def webhook():
             "Content-Type": "application/json"
         }
 
-        # Submit explicitly using data=payload_string to avoid unexpected spaces
-        order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string)
+        order_resp = requests.post(BASE_URL + path, headers=headers, data=payload_string, timeout=10)
         res_data = order_resp.json()
 
         if order_resp.status_code == 200 and res_data.get('success'):
