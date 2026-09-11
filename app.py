@@ -42,34 +42,28 @@ def webhook():
     if incoming_secret != WEBHOOK_SECRET:
         return jsonify({"message": "Unauthorized", "status": "error"}), 403
 
-    ticker = data.get('ticker', 'BTCUSDT').upper()
     action = data.get('action', '').lower()
-    contracts = int(data.get('contracts', 1)) # Default to 1 lot
+    contracts = int(data.get('contracts', 1)) # 1 lot = 0.001 BTC
 
     try:
-        # 1. Fetch products list from Delta India to locate the perpetual contract ID
+        # 1. Fetch products list from Delta India and strictly locate BTCUSD Perpetual
         products_url = f"{BASE_URL}/v2/products"
         resp = requests.get(products_url)
         products = resp.json().get('result', [])
         
         product_id = None
-        base_asset = ticker.replace("USDT", "").replace("/", "").replace("-", "")
-        
         for p in products:
             p_symbol = p.get('symbol', '').upper()
             p_type = p.get('product_type', '')
-            if base_asset in p_symbol and 'perpetual' in p_type:
+            # Strictly match the official Bitcoin Perpetual contract symbol and type
+            if p_symbol == "BTCUSD" and p_type == "perpetual_futures":
                 product_id = p.get('id')
                 break
-        
-        # Fallback default product ID for BTC Perpetual if name matching fails
-        if not product_id and "BTC" in base_asset:
-            product_id = 117569  
 
         if not product_id:
-            return jsonify({"message": f"Delta native product not found for {ticker}", "status": "error"}), 400
+            return jsonify({"message": "BTCUSD perpetual product ID not found on Delta India", "status": "error"}), 400
 
-        # 2. Prepare Order Payload for 1 lot
+        # 2. Prepare Order Payload for 1 lot under 50x leverage setup
         path = "/v2/orders"
         method = "POST"
         
