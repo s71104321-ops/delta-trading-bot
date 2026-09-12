@@ -41,11 +41,12 @@ def webhook():
 
         print(f"[{alert_name}] Signal Received -> Action: {action}, Target Lot Size: {FIXED_LOT_SIZE}")
 
-        # --- STEP 1: CANCEL OPEN STALE ORDERS ---
+        # --- STEP 1: CANCEL OPEN STALE ORDERS (Fixed) ---
         try:
-            open_orders = delta_client.get_live_orders(product_id=BTC_PRODUCT_ID)
+            open_orders = delta_client.get_live_orders()  # Removed product_id argument
             for order in open_orders:
-                delta_client.cancel_order(product_id=BTC_PRODUCT_ID, order_id=order['id'])
+                if order.get('product_id') == BTC_PRODUCT_ID:
+                    delta_client.cancel_order(product_id=BTC_PRODUCT_ID, order_id=order['id'])
         except Exception as cancel_err:
             print(f"Order cancellation warning: {str(cancel_err)}")
 
