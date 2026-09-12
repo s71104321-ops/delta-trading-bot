@@ -18,6 +18,7 @@ if DELTA_API_KEY and DELTA_API_SECRET:
     )
 
 BTC_PRODUCT_ID = 27  # BTCUSD product ID
+FIXED_LOT_SIZE = 4   # Always trade 4 contracts
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -36,10 +37,9 @@ def webhook():
             return jsonify({"status": "error", "message": "No JSON payload received"}), 400
 
         alert_name = data.get('alert_name', 'Unknown Alert')
-        action = data.get('action')          # 'buy' or 'sell'
-        contracts = int(float(data.get('contracts', 1)))
+        action = data.get('action')  # 'buy' or 'sell'
 
-        print(f"[{alert_name}] Signal Received -> Action: {action}, Target Contracts: {contracts}")
+        print(f"[{alert_name}] Signal Received -> Action: {action}, Target Lot Size: {FIXED_LOT_SIZE}")
 
         # --- STEP 1: CANCEL OPEN STALE ORDERS ---
         try:
@@ -49,31 +49,33 @@ def webhook():
         except Exception as cancel_err:
             print(f"Order cancellation warning: {str(cancel_err)}")
 
-        # --- STEP 2: CHECK CURRENT POSITION FOR REVERSAL ---
+        # --- STEP 2: CHECK CURRENT POSITION ---
         current_position_size = 0
         try:
             position = delta_client.get_position(product_id=BTC_PRODUCT_ID)
             if position and 'size' in position:
-                current_position_size = int(position['size']) # Positive for Long, Negative for Short
+                current_position_size = int(position['size'])  # Positive = Long, Negative = Short
         except Exception as pos_err:
             print(f"Position check warning: {str(pos_err)}")
 
-        # --- STEP 3: CALCULATE REVERSAL SIZES ---
-        # If action is 'buy': we want to end up Long `contracts`. 
-        # If we are currently Short (-1), we need to buy (1 [to close] + 1 [to open long]) = 2 contracts.
+        # --- STEP 3: ENFORCE FIXED SIZING & REVERSAL MATH ---
         target_side = 'buy' if action == 'buy' else 'sell'
-        execution_size = contracts
+        execution_size = FIXED_LOT_SIZE
 
         if current_position_size != 0:
             is_long = current_position_size > 0
+            # If current position direction is opposite to the incoming action, it's a REVERSAL
             if (is_long and action == 'sell') or (not is_long and action == 'buy'):
-                # Flipping direction requires covering the existing size PLUS taking the new position size
-                execution_size = abs(current_position_size) + contracts
-            elif (is_long and action == 'buy') or (not is_long and action == 'sell'):
-                # Already in the correct direction, no action or adjustment needed
-                if abs(current_position_size) >= contracts:
-                    print("Already in position with sufficient size. Skipping.")
-                    return jsonify({"status": "success", "message": "Position already matches target."}), 200
+                # Close existing position (abs value) + open new fixed 4 lots
+                execution_size = abs(current_position_size) + FIXED_LOT_SIZE
+            else:
+                # Same direction signal: check if we already match the fixed lot size
+                if abs(current_position_size) >= FIXED_LOT_SIZE:
+                    print("Position already matches or exceeds target lot size. Skipping.")
+                    return jsonify({"status": "success", "message": "Position already matches target size."}), 200
+                else:
+                    # Top up to 4 if partially filled
+                    execution_size = FIXED_LOT_SIZE - abs(current_position_size)
 
         print(f"Executing {target_side} market order for size: {execution_size} (Current Pos: {current_position_size})")
 
@@ -87,7 +89,7 @@ def webhook():
 
         return jsonify({
             "status": "success",
-            "message": f"Successfully reversed/executed {target_side} order for {execution_size} contracts.",
+            "message": f"Successfully executed {target_side} order for {execution_size} contracts.",
             "exchange_response": order_response
         }), 200
 
@@ -97,7 +99,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def health_check():
-    return jsonify({"status": "online", "bot": "Delta Exchange DPO RMA Bot"}), 200
+    return jsonify({"status": "online", "bot": "Delta Exchange Fixed-Lot Bot"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
