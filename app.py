@@ -18,7 +18,7 @@ if DELTA_API_KEY and DELTA_API_SECRET:
     )
 
 BTC_PRODUCT_ID = 27  # BTCUSD product ID
-FIXED_LOT_SIZE = 4   # Always trade 4 contracts
+FIXED_LOT_SIZE = 4   # Always trade 4 contracts on entry, 8 on reversal
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -66,7 +66,7 @@ def webhook():
             is_long = current_position_size > 0
             # If current position direction is opposite to the incoming action, it's a REVERSAL
             if (is_long and action == 'sell') or (not is_long and action == 'buy'):
-                # Close existing position (abs value) + open new fixed 4 lots
+                # Close existing position (abs value) + open new fixed 4 lots (Results in 8 total contracts)
                 execution_size = abs(current_position_size) + FIXED_LOT_SIZE
             else:
                 # Same direction signal: check if we already match the fixed lot size
@@ -74,7 +74,7 @@ def webhook():
                     print("Position already matches or exceeds target lot size. Skipping.")
                     return jsonify({"status": "success", "message": "Position already matches target size."}), 200
                 else:
-                    # Top up to 4 if partially filled
+                    # Top up if partially filled
                     execution_size = FIXED_LOT_SIZE - abs(current_position_size)
 
         print(f"Executing {target_side} market order for size: {execution_size} (Current Pos: {current_position_size})")
