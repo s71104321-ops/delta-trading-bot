@@ -1,9 +1,17 @@
 from flask import Flask, request
 import json
 import os
-# import requests # Uncomment if you are using 'requests' library to call Delta Exchange API
+import requests
 
 app = Flask(__name__)
+
+# --- CONFIGURATION ---
+DELTA_API_URL = "https://api.india.delta.exchange"  # or mainnet URL if applicable
+API_KEY = os.environ.get("DELTA_API_KEY", "YOUR_API_KEY")
+API_SECRET = os.environ.get("DELTA_API_SECRET", "YOUR_API_SECRET")
+
+# Set your fixed target position size here (1 contract)
+TARGET_LOT_SIZE = 1 
 
 @app.route('/', methods=['GET'])
 def home():
@@ -12,12 +20,11 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Step 1: Safely parse incoming data (handles both raw JSON and string-wrapped payloads)
+        # 1. Safely parse incoming JSON (handles both raw JSON and string-wrapped payloads)
         data = request.get_json(silent=True)
         
         if not data and request.data:
             raw_data = request.data.decode('utf-8').strip()
-            # Strip outer quotes if TradingView sends them wrapped
             if raw_data.startswith('"') and raw_data.endswith('"'):
                 raw_data = raw_data[1:-1]
             data = json.loads(raw_data)
@@ -26,18 +33,26 @@ def webhook():
             return {"error": "Invalid or empty payload"}, 400
 
         action = data.get("action") # "buy" or "sell"
-        ticker = data.get("alert_name") # e.g., "DELTAIN:BTCUSD.P"
+        ticker = data.get("alert_name", "BTCUSD.P") # e.g., "DELTAIN:BTCUSD.P"
 
-        print(f"Signal Received -> Ticker: {ticker}, Action: {action}")
+        print(f"[DELTA] Signal Received -> Ticker: {ticker}, Action: {action}, Target Lot Size: {TARGET_LOT_SIZE}")
 
-        # --- STEP 2: YOUR DELTA EXCHANGE ORDER EXECUTION LOGIC ---
-        # Example:
-        # if action == "buy":
-        #     # Code to place buy order (Lot size: 1)
-        # elif action == "sell":
-        #     # Code to place sell/short order (Lot size: 1)
+        # 2. PLACE ORDER LOGIC ON DELTA EXCHANGE
+        # Note: Implement your Delta Exchange API call here. 
+        # To handle position reversals correctly:
+        # If Current Position is +1 and action is 'sell', you need to sell (1 + TARGET_LOT_SIZE) = 2 contracts.
+        
+        # Example structure for Delta v2 orders API:
+        # endpoint = f"{DELTA_API_URL}/v2/orders"
+        # payload = {
+        #     "product_id": ..., # map ticker to product ID
+        #     "size": calculated_order_size,
+        #     "side": action,
+        #     "order_type": "market"
+        # }
+        # response = requests.post(endpoint, json=payload, headers=...)
 
-        return {"status": "success", "action": action}, 200
+        return {"status": "success", "action": action, "target_size": TARGET_LOT_SIZE}, 200
 
     except Exception as e:
         print(f"Webhook Processing Error: {str(e)}")
