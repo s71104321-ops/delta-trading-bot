@@ -1,16 +1,13 @@
 import os
 from flask import Flask, request, jsonify
-from delta_rest_client import DeltaRestClient, OrderType, TimeInForce
+from delta_rest_client import DeltaRestClient, create_order_format
 
 app = Flask(__name__)
 
-# ==========================================
-# Delta Exchange API Configuration
-# ==========================================
-# Best practice: Load keys from Render environment variables
-API_KEY = os.getenv("DELTA_API_KEY", "YOUR_API_KEY")
-API_SECRET = os.getenv("DELTA_API_SECRET", "YOUR_API_SECRET")
-BASE_URL = os.getenv("DELTA_BASE_URL", "https://api.india.delta.exchange") # Use testnet URL if testing: https://cdn-ind.testnet.deltaex.org
+# Load Delta API credentials from Render environment variables
+API_KEY = os.getenv("DELTA_API_KEY")
+API_SECRET = os.getenv("DELTA_API_SECRET")
+BASE_URL = os.getenv("DELTA_BASE_URL", "https://api.india.delta.exchange")
 
 client = DeltaRestClient(
     base_url=BASE_URL,
@@ -18,37 +15,30 @@ client = DeltaRestClient(
     api_secret=API_SECRET
 )
 
-# BTCUSD.P Product ID on Delta Exchange (usually product ID 84 or fetched dynamically)
-# You can verify your exact product ID via client.get_product('BTCUSD.P')
-BTCUSD_PRODUCT_ID = int(os.getenv("BTC_PRODUCT_ID", 84)) 
+# Replace with your specific Delta Exchange product ID for BTCUSD.P (e.g., 84 or fetched)
+PRODUCT_ID = int(os.getenv("BTC_PRODUCT_ID", 84))
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Parse incoming JSON payload from TradingView
+        # Parse incoming JSON payload from TradingView alert
         data = request.get_json(force=True)
         
         if not data:
             return jsonify({"status": "error", "message": "No JSON payload received"}), 400
 
-        # Dynamically extract fields (Fixes static size bug)
+        # Dynamically read values (Fixes the static size bug)
         ticker = data.get("alert_name", "BTCUSD.P")
         action = data.get("action")          # "buy" or "sell"
-        size = int(float(data.get("size", 1.0)))  # Ensure integer quantity for contract sizing
+        size = int(float(data.get("size", 1.0)))  # Dynamically reads 1 or 2 contracts
 
         print(f"[DELTA] Signal Received -> Ticker: {ticker}, Action: {action}, Target Lot Size: {size}")
 
-        # ==========================================
-        # Execute Order on Delta Exchange API
-        # ==========================================
-        # Places a market order using the dynamic size sent by TradingView
-        order_response = client.place_order(
-            product_id=BTCUSD_PRODUCT_ID,
-            size=size,
-            side=action, # "buy" or "sell"
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.IOC
-        )
+        # Build and execute the order using delta-rest-client
+        # For market orders, limit_price can be set to 0 or current price depending on market type, 
+        # or use create_order_format for standard execution:
+        order = create_order_format(0, size, action, PRODUCT_ID)
+        order_response = client.create_order(order)
 
         print(f"[DELTA] Order Success: {order_response}")
         return jsonify({"status": "success", "action": action, "size": size, "response": order_response}), 200
