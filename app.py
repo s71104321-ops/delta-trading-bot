@@ -18,7 +18,9 @@ client = DeltaRestClient(
 def get_btc_product_id():
     try:
         products = client.get_products()
-        for p in products.get('result', []):
+        # Handle both list and dict formats returned by the client library
+        product_list = products.get('result', []) if isinstance(products, dict) else products
+        for p in product_list:
             if p.get('symbol') == 'BTCUSD.P':
                 return p.get('id')
     except Exception as e:
@@ -41,7 +43,7 @@ def webhook():
 
         print(f"[DELTA] Signal Received -> Ticker: {ticker}, Action: {action}, Target Lot Size: {size}")
 
-        # Dynamically fetch the correct product ID to prevent 'invalid_contract' errors
+        # Dynamically fetch the correct product ID
         product_id = get_btc_product_id()
         print(f"[DELTA] Using Product ID: {product_id}")
 
