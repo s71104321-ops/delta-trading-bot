@@ -15,8 +15,16 @@ client = DeltaRestClient(
     api_secret=API_SECRET
 )
 
-# Replace with your specific Delta Exchange product ID for BTCUSD.P (e.g., 84 or fetched)
-PRODUCT_ID = int(os.getenv("BTC_PRODUCT_ID", 84))
+def get_btc_product_id():
+    try:
+        products = client.get_products()
+        for p in products.get('result', []):
+            if p.get('symbol') == 'BTCUSD.P':
+                return p.get('id')
+    except Exception as e:
+        print(f"[WARNING] Could not fetch products dynamically: {e}")
+    # Fallback product ID
+    return 84
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -27,17 +35,18 @@ def webhook():
         if not data:
             return jsonify({"status": "error", "message": "No JSON payload received"}), 400
 
-        # Dynamically read values (Fixes the static size bug)
         ticker = data.get("alert_name", "BTCUSD.P")
         action = data.get("action")          # "buy" or "sell"
         size = int(float(data.get("size", 1.0)))  # Dynamically reads 1 or 2 contracts
 
         print(f"[DELTA] Signal Received -> Ticker: {ticker}, Action: {action}, Target Lot Size: {size}")
 
-        # Build and execute the order using delta-rest-client
-        # For market orders, limit_price can be set to 0 or current price depending on market type, 
-        # or use create_order_format for standard execution:
-        order = create_order_format(0, size, action, PRODUCT_ID)
+        # Dynamically fetch the correct product ID to prevent 'invalid_contract' errors
+        product_id = get_btc_product_id()
+        print(f"[DELTA] Using Product ID: {product_id}")
+
+        # Build and execute the order
+        order = create_order_format(0, size, action, product_id)
         order_response = client.create_order(order)
 
         print(f"[DELTA] Order Success: {order_response}")
