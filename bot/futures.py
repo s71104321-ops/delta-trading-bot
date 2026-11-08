@@ -19,15 +19,16 @@ class FuturesError(Exception):
 
 
 class FuturesTrader:
-    def __init__(self, client, journal, notifier, settings, dry_run=True, fill_timeout=10):
+    def __init__(self, client, journal, notifier, settings, dry_run=True, fill_timeout=10, symbol=None):
         self.c, self.j, self.n, self.s = client, journal, notifier, settings
         self.dry_run = dry_run
         self.fill_timeout = fill_timeout
+        self.symbol = symbol
         self._product = None
 
     def product(self):
         if self._product is None:
-            sym = f"{self.s.underlying}USD"
+            sym = self.symbol or f"{self.s.underlying}USD"
             prods = self.c.products(contract_types="perpetual_futures")
             match = [p for p in prods if p.get("symbol") == sym]
             if not match:
