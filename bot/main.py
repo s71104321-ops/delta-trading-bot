@@ -51,7 +51,9 @@ class Bot:
             return self.s.dry_run_equity_usd
         bals = self.c.wallet()
         usd = [b for b in bals if b.get("asset_symbol") in ("USD", "USDT")]
-        return float(usd[0].get("available_balance", 0)) if usd else 0.0
+        bal = float(usd[0].get("balance") or usd[0].get("available_balance") or 0) if usd else 0.0
+        cap = self.s.trading_capital_usd
+        return min(bal, cap) if cap > 0 else bal
 
     def try_open_futures(self, side, stop_pct):
         leg = self.fut.plan(side, stop_pct, self.equity())
