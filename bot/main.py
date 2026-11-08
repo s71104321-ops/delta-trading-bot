@@ -4,6 +4,7 @@
   python -m bot.main status                  # wallet, positions, open baskets
   python -m bot.main open-test bull_call_spread   # open one test basket (testnet / dry-run)
   python -m bot.main open-test-futures long 1.0   # test perp trade, 1% stop (testnet / dry-run)
+  python -m bot.main signals                 # current trend-portfolio signals (read-only)
   python -m bot.main kill                    # cancel orders + close all baskets now
 """
 import logging
@@ -18,6 +19,7 @@ from .futures import FuturesError, FuturesTrader
 from .journal import Journal
 from .notifier import Notifier
 from .risk import RiskBlocked, RiskManager
+from .trend_portfolio import TrendPortfolio
 
 log = logging.getLogger("bot")
 
@@ -32,11 +34,16 @@ class Bot:
         self.exe = BasketExecutor(self.c, self.j, self.n, dry_run=s.dry_run)
         self.chain = OptionChain(self.c, s.underlying)
         self.fut = FuturesTrader(self.c, self.j, self.n, s, dry_run=s.dry_run)
-        self.strategy = strategies.get(os.getenv("STRATEGY", "none"))
+        self.strategy_name = os.getenv("STRATEGY", "none")
+        self.trend = TrendPortfolio(self) if self.strategy_name == "trend_portfolio" else None
+        self.strategy = strategies.get("none" if self.trend else self.strategy_name)
 
     def _wire(self, client):
         """Point every component at one client (used by tests)."""
         self.c = self.exe.c = self.chain.c = self.fut.c = client
+        if self.trend:
+            for t in self.trend.traders.values():
+                t.c = client
 
     def equity(self):
         if self.s.dry_run:
@@ -85,6 +92,8 @@ class Bot:
             return "killed"
         # exits first
         for b in self.j.open_baskets():
+            if b["name"].startswith("trend:"):
+                continue                    # managed by the trend portfolio
             if FuturesTrader.is_perp(b):
                 if FuturesTrader.stop_hit(b, self.fut.quote()["mark"]):
                     self.fut.cancel_stop(b)
@@ -93,11 +102,15 @@ class Bot:
             pnl = self.exe.mark_pnl(b)
             if self.risk.basket_should_exit(pnl, b["entry_cost"]):
                 self.exe.close(b, "basket_stop_loss")
-        if self.risk.daily_pnl(self.unrealized()) <= -self.s.max_daily_loss_usd:
+        cap = (self.s.max_daily_loss_pct / 100 * self.equity()) if self.trend else self.s.max_daily_loss_usd
+        if self.risk.daily_pnl(self.unrealized()) <= -cap:
             self.flatten("daily_loss_cap")
             open(self.s.kill_file, "w").write("daily loss cap hit\n")
             self.n.send("🛑 Daily loss cap hit. Kill switch ON. Delete the KILL file to resume.")
             return "daily_cap"
+        if self.trend:
+            self.trend.tick(self.equity())
+            return "ok"
         # entries
         sig = self.strategy.entry_signal({"spot": self.spot()})
         if sig:
@@ -112,7 +125,7 @@ class Bot:
 
     def run(self):
         mode = f"{self.s.env.upper()}{' DRY-RUN' if self.s.dry_run else ''}"
-        self.n.send(f"🤖 Bot started [{mode}] strategy={self.strategy.name}")
+        self.n.send(f"🤖 Bot started [{mode}] strategy={self.strategy_name}")
         errors = 0
         while True:
             try:
@@ -150,6 +163,8 @@ def main(argv=None):
             raise SystemExit("open-test-futures is for testnet only")
         side = {"long": "buy", "short": "sell"}[argv[1] if len(argv) > 1 else "long"]
         print("opened", bot.try_open_futures(side, float(argv[2]) if len(argv) > 2 else 1.0))
+    elif cmd == "signals":
+        print((bot.trend or TrendPortfolio(bot)).summary())
     elif cmd == "kill":
         open(s.kill_file, "w").write("manual kill\n")
         bot.flatten("manual_kill")
