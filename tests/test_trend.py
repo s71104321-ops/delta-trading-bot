@@ -183,3 +183,13 @@ def test_summary_runs(tsettings):
     b, cl = make(tsettings, bars)
     out = b.trend.summary()
     assert "BTCUSD" in out and "ETHUSD" in out
+
+
+def test_trading_capital_caps_live_equity(tsettings, monkeypatch):
+    tsettings.dry_run = False
+    tsettings.trading_capital_usd = 1150
+    b, cl = make(tsettings, make_bars(700))
+    cl.wallet = lambda: [{"asset_symbol": "USD", "balance": "50000", "available_balance": "50000"}]
+    assert b.equity() == 1150
+    tsettings.trading_capital_usd = 0
+    assert b.equity() == 50000
