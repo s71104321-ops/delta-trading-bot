@@ -42,6 +42,7 @@ class Bot:
         """Point every component at one client (used by tests)."""
         self.c = self.exe.c = self.chain.c = self.fut.c = client
         if self.trend:
+            self.trend.data = client
             for t in self.trend.traders.values():
                 t.c = client
 
