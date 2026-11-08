@@ -11,6 +11,8 @@ import os
 import time
 
 from . import signals
+from .config import BASE_URLS
+from .delta_client import DeltaClient
 from .futures import FuturesError, FuturesTrader
 
 log = logging.getLogger("trend")
@@ -24,6 +26,8 @@ class TrendPortfolio:
         self.coins = dict(x.split(":") for x in self.s.trend_coins.split(","))
         self.traders = {sym: FuturesTrader(bot.c, bot.j, bot.n, self.s, dry_run=self.s.dry_run, symbol=sym)
                         for sym in self.coins}
+        # signals always use REAL market candles (public data, no key), even when trading on testnet
+        self.data = DeltaClient(BASE_URLS["live"])
         self.path = state_path
         self.state = self._load()
 
@@ -53,7 +57,7 @@ class TrendPortfolio:
         rows, t = {}, start
         while t < now:
             t2 = min(t + 1900 * H4, now)
-            for c in self.bot.c.candles(sym, "4h", t, t2) or []:
+            for c in self.data.candles(sym, "4h", t, t2) or []:
                 rows[int(c["time"])] = (int(c["time"]), float(c["open"]), float(c["high"]),
                                         float(c["low"]), float(c["close"]))
             t = t2
