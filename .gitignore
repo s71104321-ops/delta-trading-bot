@@ -1,0 +1,5 @@
+.env
+data/
+KILL
+__pycache__/
+.venv/
