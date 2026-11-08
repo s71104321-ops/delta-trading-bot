@@ -49,6 +49,11 @@ class Settings:
     max_funding_pct: float = 0.05       # skip trades paying more funding than this per interval
     dry_run_equity_usd: float = 500.0   # pretend balance used for sizing in dry-run
 
+    # --- trend portfolio (STRATEGY=trend_portfolio) ---
+    trend_coins: str = "BTCUSD:trend,ETHUSD:breakout"
+    trend_leverage: float = 1.0          # total exposure = equity x this, split equally between coins
+    max_daily_loss_pct: float = 10.0     # flatten + kill switch if today's loss exceeds this % of equity
+
     # --- ops ---
     poll_seconds: int = 30
     kill_file: str = "KILL"           # create this file to stop + flatten everything
@@ -89,6 +94,9 @@ def load() -> Settings:
         max_open_futures=_i("MAX_OPEN_FUTURES", 1),
         max_funding_pct=_f("MAX_FUNDING_PCT", 0.05),
         dry_run_equity_usd=_f("DRY_RUN_EQUITY_USD", 500),
+        trend_coins=os.getenv("TREND_COINS", "BTCUSD:trend,ETHUSD:breakout"),
+        trend_leverage=_f("TREND_LEVERAGE", 1.0),
+        max_daily_loss_pct=_f("MAX_DAILY_LOSS_PCT", 10),
         poll_seconds=_i("POLL_SECONDS", 30),
         kill_file=os.getenv("KILL_FILE", "KILL"),
         journal_path=os.getenv("JOURNAL_PATH", "data/journal.sqlite"),
