@@ -51,6 +51,22 @@ def load():
     return px
 
 
+def clean(px):
+    """Yahoo has broken days for some Indian ETFs/stocks (splits not adjusted). Remove impossible jumps."""
+    out = {}
+    for n, df in px.items():
+        thr = 0.20 if (n in ETFS or n in INDEX) else 0.40
+        r = df["Close"].pct_change().fillna(0)
+        bad = r.abs() > thr
+        if bad.any():
+            print(f"cleaned {n}: {int(bad.sum())} bad days", flush=True)
+        r[bad] = 0.0
+        newc = df["Close"].iloc[0] * (1 + r).cumprod()
+        f = newc / df["Close"]
+        out[n] = df.mul(f, axis=0)
+    return out
+
+
 # ---------------- stats ----------------
 def stats(r):
     r = pd.Series(r).dropna()
@@ -188,7 +204,7 @@ def stock_momentum(px, top=10, look=252, skip=21, cost=0.002, regime=True):
 
 # ---------------- main ----------------
 def main():
-    px = load()
+    px = clean(load())
     print("\n=== BUY & HOLD (price only, no dividends) ===")
     for n in ("NIFTY", "BANKNIFTY", "NIFTYBEES", "JUNIORBEES", "GOLDBEES", "MON100"):
         if n in px:
