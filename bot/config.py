@@ -53,6 +53,7 @@ class Settings:
     trend_coins: str = "BTCUSD:trend,ETHUSD:breakout"
     trend_leverage: float = 1.0          # total exposure = equity x this, split equally between coins
     max_daily_loss_pct: float = 10.0     # flatten + kill switch if today's loss exceeds this % of equity
+    trading_capital_usd: float = 0.0     # >0: bot treats the account as this big (uses min(wallet, this))
 
     # --- ops ---
     poll_seconds: int = 30
@@ -97,6 +98,7 @@ def load() -> Settings:
         trend_coins=os.getenv("TREND_COINS", "BTCUSD:trend,ETHUSD:breakout"),
         trend_leverage=_f("TREND_LEVERAGE", 1.0),
         max_daily_loss_pct=_f("MAX_DAILY_LOSS_PCT", 10),
+        trading_capital_usd=_f("TRADING_CAPITAL_USD", 0),
         poll_seconds=_i("POLL_SECONDS", 30),
         kill_file=os.getenv("KILL_FILE", "KILL"),
         journal_path=os.getenv("JOURNAL_PATH", "data/journal.sqlite"),
